@@ -20,24 +20,16 @@
 #define SW3 BIT2
 #define SW4 BIT3
 
-AbRect rect10 = {abRectGetBounds, abRectCheck, {10,2}}; /**< 10x10 rectangle */
-AbRect rect11 = {abRectGetBounds, abRectCheck, {10,2}}; 
-//AbRArrow rightArrow = {abRArrowGetBounds, abRArrowCheck, 30};
+
+int p1Horizontal = 0;
+int p2Horizontal = 0;
+AbRect rect10 = {abRectGetBounds, abRectCheck, {15,2}}; /**< 10x10 rectangle */
+AbRect rect11 = {abRectGetBounds, abRectCheck, {15,2}}; 
+
 
 AbRectOutline fieldOutline = {	/* playing field */
   abRectOutlineGetBounds, abRectOutlineCheck,   
-  {screenWidth/2 - 10, screenHeight/2 - 10}
-};
-
-  
-
-Layer layer3 = {		/**< Layer with an orange circle */
-  (AbShape *)&circle8,
-  {(screenWidth/2)+10, (screenHeight/2)+5}, /**< bit below & right of center */
-  {0,0}, {0,0},				    /* last & next pos */
-  COLOR_VIOLET,
-  0
-  //&layer4,
+  {screenWidth/2 -1, screenHeight/2 -1}
 };
 
 Layer fieldLayer = {		/* playing field as a layer */
@@ -45,24 +37,34 @@ Layer fieldLayer = {		/* playing field as a layer */
   {screenWidth/2, screenHeight/2},/**< center */
   {0,0}, {0,0},				    /* last & next pos */
   COLOR_BLACK,
-  &layer3
+  0
 };
 
-Layer layer1 = {		/**< Layer with a red square */
+Layer paddleBottom = {		/**< Layer with a red square */
   (AbShape *)&rect10,
-  {screenWidth/2, 20}, /**< center */
+  {screenWidth/2, screenHeight-10}, /**< center */
   {0,0}, {0,0},				    /* last & next pos */
   COLOR_RED,
-  &fieldLayer,
+  &fieldLayer
 };
 
-Layer layer0 = {		/**< Layer with a red square */
+Layer paddleTop = {		/**< Layer with a red square */
   (AbShape *)&rect11,
-  {screenWidth/2, screenHeight-20}, /**< center */
+  {screenWidth/2, 10}, /**< center */
   {0,0}, {0,0},				    /* last & next pos */
   COLOR_RED,
-  &layer1,
+  &paddleBottom
 };
+
+
+Layer bolita = {		/**< Layer with an orange circle */
+  (AbShape *)&circle5,
+  {(screenWidth/2)+10, (screenHeight/2)+5}, /**< bit below & right of center */
+  {0,0}, {0,0},				    /* last & next pos */
+  COLOR_VIOLET,
+  &paddleTop,
+};
+
 
 /** Moving Layer
  *  Linked list of layer references
@@ -75,9 +77,11 @@ typedef struct MovLayer_s {
 } MovLayer;
 
 /* initial value of {0,0} will be overwritten */
-MovLayer ml3 = { &layer3, {1,1}, 0 }; /**< not all layers move */
-MovLayer ml1 = { &layer1, {0,0}, &ml3 };//paddle up 
-MovLayer ml0 = { &layer0, {0,0}, &ml1 };//paddle down 
+
+ /**< not all layers move */
+MovLayer paddle1= { &paddleBottom, {0,0}, 0 };//paddle up 
+MovLayer paddle2= { &paddleTop, {0,0}, 0 };//paddle down 
+MovLayer mlball = { &bolita, {1,1}, 0 }; //ball
 
 void movLayerDraw(MovLayer *movLayers, Layer *layers)
 {
@@ -124,27 +128,41 @@ void movLayerDraw(MovLayer *movLayers, Layer *layers)
  *  \param fence The region which will serve as a boundary for ml
  */
 
-void mlAdvance(MovLayer *ml, Region *fence)
+void moveBall(MovLayer *ml, Region *fence)
 {
   Vec2 newPos;
   u_char axis;
   Region shapeBoundary;
-  for (; ml; ml = ml->next) {
+  
     vec2Add(&newPos, &ml->layer->posNext, &ml->velocity);
     abShapeGetBounds(ml->layer->abShape, &newPos, &shapeBoundary);
-    for (axis = 0; axis < 2; axis ++) {
+    for (; ml; ml = ml->next) {
+    vec2Add(&newPos, &ml->layer->posNext, &ml->velocity);
+    abShapeGetBounds(ml->layer->abShape, &newPos, &shapeBoundary);
+     for (axis = 0; axis < 2; axis ++) {
       if ((shapeBoundary.topLeft.axes[axis] < fence->topLeft.axes[axis]) ||
 	  (shapeBoundary.botRight.axes[axis] > fence->botRight.axes[axis]) ) {
 	int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
 	newPos.axes[axis] += (2*velocity);
       }	/**< if outside of fence */
-    } /**< for axis */
+     } /**< for axis */
     ml->layer->posNext = newPos;
   } /**< for ml */
 }
 
-void p1Move(MovLayer *lay, Region *fence){
-  
+void p1Move(MovLayer *ml, Region *fence, int offset){
+  Vec2 newPos;
+  u_char axis;
+  Region shapeBoundary;
+  vec2Add(&newPos, &ml->layer->posNext, &ml->velocity);
+  abShapeGetBounds(ml->layer->abShape, &newPos, &shapeBoundary);
+  if((shapeBoundary.topLeft.axes[0] > fence->topLeft.axes[0]) &&
+     (shapeBoundary.botRight.axes[0] < fence->botRight.axes[0]) ){
+  newPos.axes[0] = newPos.axes[0] + offset;
+  }	/**< if outside of fence */
+   ml->layer->posNext = newPos;
+   //layerGetBounds(&layer1,&fieldOutline);
+
 }
 
 u_int bgColor = COLOR_BLUE;     /**< The background color */
@@ -153,9 +171,36 @@ int redrawScreen = 1;           /**< Boolean for whether screen needs to be redr
 Region fieldFence;		/**< fence around playing field  */
 
 
-/** Initializes everything, enables interrupts and green LED, 
- *  and handles the rendering for the screen
- */
+void switch_handler(){
+  char switches = p2sw_read();
+  char switch1_down = (switches & SW1) ? 0 : 1;
+  char switch2_down = (switches & SW2) ? 0 : 1;
+  char switch3_down = (switches & SW3) ? 0 : 1;
+  char switch4_down = (switches & SW4) ? 0 : 1;
+  
+  if(switch1_down){
+    p1Horizontal = -1;
+    p1Move(&paddle1,&fieldFence,p1Horizontal);
+    //movLayerDraw(&ml, &layer0);
+    redrawScreen = 1;
+  }
+  if(switch2_down){
+    p1Horizontal = 1;
+    p1Move(&paddle1,&fieldFence,p1Horizontal);
+    //movLayerDraw(&ml, &layer0);
+    redrawScreen = 1;
+  }if(switch3_down){
+    p2Horizontal = -1;
+    p1Move(&paddle2,&fieldFence,p2Horizontal);
+    //movLayerDraw(&ml, &layer0);
+    redrawScreen = 1;
+  }if(switch4_down){
+    p2Horizontal = 1;
+    p1Move(&paddle2,&fieldFence,p2Horizontal);
+    //movLayerDraw(&ml, &layer0);
+    redrawScreen = 1;
+  }
+}
 void main()
 {
   P1DIR |= GREEN_LED;		/**< Green led on when CPU on */		
@@ -164,15 +209,15 @@ void main()
   configureClocks();
   lcd_init();
   shapeInit();
-  p2sw_init(1);
+  p2sw_init(15);
 
   shapeInit();
 
-  layerInit(&layer0);
-  layerDraw(&layer0);
+  layerInit(&bolita);
+  layerDraw(&bolita);
 
 
-  layerGetBounds(&fieldLayer, &fieldFence);
+   layerGetBounds(&fieldLayer, &fieldFence);
 
 
   enableWDTInterrupts();      /**< enable periodic interrupt */
@@ -180,22 +225,17 @@ void main()
 
 
   for(;;) { 
-    while (!redrawScreen) { /**< Pause CPU if screen doesn't need updating */
+    while (!redrawScreen) { /**< Pause
       P1OUT &= ~GREEN_LED;    /**< Green led off witHo CPU */
-      or_sr(0x10);	      /**< CPU OFF */
+      or_sr(0x10);/**< CPU OFF */
+      switch_handler();
     }
     P1OUT |= GREEN_LED;       /**< Green led on when CPU on */
     redrawScreen = 0;
-    movLayerDraw(&ml0, &layer0);
-  }
-}
-
-void switch_handler(){
-  char switches = p2sw_read();
-  char switch1_down = (switches & SW1) ? 0 : 1;
-
-  if(switch1_down){
-    
+    movLayerDraw(&mlball, &bolita);
+    movLayerDraw(&paddle1,&paddleBottom);
+    movLayerDraw(&paddle2,&paddleTop);
+ 
   }
 }
 /** Watchdog timer interrupt handler. 15 interrupts/sec */
@@ -204,9 +244,9 @@ void wdt_c_handler()
   static short count = 0;
   P1OUT |= GREEN_LED;		      /**< Green LED on when cpu on */
   count ++;
-  if (count == 15) {
-    //    switch_handler(); 
-    mlAdvance(&ml0, &fieldFence);
+  if (count == 3) {
+    
+    moveBall(&mlball, &fieldFence);
     if (p2sw_read())
       redrawScreen = 1;
     count = 0;
