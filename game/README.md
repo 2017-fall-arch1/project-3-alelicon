@@ -1,4 +1,4 @@
-##Project 3
+## Project 3
 
 Alejandra Licon
 
@@ -14,15 +14,15 @@ switch 3- left
 switch 4- right
 
 
-##Collaboration
+## Collaboration
 Professor's code 
 
 
-##To Clean
+## To Clean
 
 type "make clean"
 
 
-##To Run
+## To Run
 
 type "make load"
